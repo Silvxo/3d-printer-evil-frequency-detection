@@ -5,38 +5,32 @@ from pathlib import Path
 from typing import Any
 
 CSV_FIELDNAMES = ["timestamp", "topic", "x", "y", "z", "samplingRate", "payload"]
+DEFAULT_SAMPLING_RATE = 1000
 
 
 def parse_payload(payload: str) -> dict[str, float | int]:
-    """Parse 'x;y;z;samplingRate' string into numeric fields.
+    """Parse 'x;y;z' string into numeric fields and fill samplingRate as 1000Hz.
 
     Raises ValueError if the format or numeric conversion is invalid.
     """
     parts = payload.strip().split(";")
-    if len(parts) != 4:
+    if len(parts) != 3:
         raise ValueError(
-            f"Expected 4 semicolon-separated values (x;y;z;samplingRate), got {len(parts)}"
+            f"Expected 3 semicolon-separated values (x;y;z), got {len(parts)}"
         )
 
     x = float(parts[0])
     y = float(parts[1])
     z = float(parts[2])
-    sampling_rate_float = float(parts[3])
 
-    if not all(math.isfinite(v) for v in (x, y, z, sampling_rate_float)):
+    if not all(math.isfinite(v) for v in (x, y, z)):
         raise ValueError("Payload contains non-finite numeric values")
-
-    sampling_rate: int | float = (
-        int(sampling_rate_float)
-        if sampling_rate_float.is_integer()
-        else sampling_rate_float
-    )
 
     return {
         "x": x,
         "y": y,
         "z": z,
-        "samplingRate": sampling_rate,
+        "samplingRate": DEFAULT_SAMPLING_RATE,
     }
 
 
@@ -88,7 +82,8 @@ class CsvMessageStore:
         with self.file_path.open("r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                sr_float = float(row["samplingRate"])
+                raw_sr = row.get("samplingRate")
+                sr_float = float(raw_sr) if raw_sr else float(DEFAULT_SAMPLING_RATE)
                 sampling_rate: int | float = (
                     int(sr_float) if sr_float.is_integer() else sr_float
                 )

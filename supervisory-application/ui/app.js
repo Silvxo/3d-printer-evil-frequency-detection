@@ -291,7 +291,7 @@
   }
 
   /**
-   * Fetch records for a specific CSV file and render the 6 per-axis graphs
+   * Fetch Python-computed FFT analysis for a specific CSV file and render the 6 per-axis graphs
    */
   async function selectAndLoadAnalysisFile(filename) {
     if (!filename) {
@@ -313,18 +313,16 @@
     }
 
     const encoded = encodeURIComponent(filename);
-    const data = await apiRequest("/api/sections/" + encoded, { method: "GET" });
+    const data = await apiRequest("/api/fft/" + encoded, { method: "GET" });
 
-    if (data && Array.isArray(data.records)) {
-      state.selectedFileRecords = data.records;
-      const count = data.records.length;
+    if (data && data.axes && typeof data.axes === "object") {
+      const count = typeof data.sampleCount === "number" ? data.sampleCount : 0;
       if (dom.analysisSectionPill) {
         dom.analysisSectionPill.textContent =
           "Section: " + filename + " (" + count + (count === 1 ? " sample)" : " samples)");
       }
-      computeAndStoreAxisAnalysis(data.records, filename);
+      applyBackendFftAnalysis(data.axes, filename);
     } else {
-      state.selectedFileRecords = null;
       if (dom.analysisSectionPill) {
         dom.analysisSectionPill.textContent = "Section: " + filename;
       }
@@ -336,7 +334,8 @@
     if (typeof state.callbacks.onFileSelect === "function") {
       state.callbacks.onFileSelect({
         filename,
-        records: state.selectedFileRecords || [],
+        sampleCount: data && typeof data.sampleCount === "number" ? data.sampleCount : 0,
+        axes: state.axisAnalysisData,
       });
     }
   }
@@ -540,159 +539,16 @@
   }
 
   /**
-   * Compute Discrete Fourier Transform (DFT) spectrum for a 1D real signal
+   * Store per-axis spectral & FFT analysis data computed by the Python backend (fft.py)
    */
-  function computeAxisDft(samples, samplingRate) {
-    const N = samples.length;
-    const fs = samplingRate > 0 ? samplingRate : 200;
-    const nyquist = fs / 2;
-
-    if (N === 0) {
-      return {
-        empty: true,
-        maxFrequency: nyquist,
-        spectrumPoints: [],
-        fftPoints: [],
-        maxAmplitude: 1.0,
-        maxMagnitude: 1.0,
-        threshold: 0.35,
-        ghostPeaks: [],
-      };
-    }
-
-    // Compute DC mean to remove gravity / static offset
-    let sum = 0;
-    for (let i = 0; i < N; i++) {
-      sum += samples[i];
-    }
-    const mean = sum / N;
-    const centered = new Array(N);
-    for (let i = 0; i < N; i++) {
-      centered[i] = samples[i] - mean;
-    }
-
-    if (N === 1) {
-      const amp = Math.abs(samples[0]);
-      const maxAmp = Math.max(0.1, Number((amp * 1.25).toFixed(4)));
-      return {
-        empty: false,
-        maxFrequency: nyquist,
-        spectrumPoints: [
-          { frequency: 0, amplitude: amp },
-          { frequency: nyquist, amplitude: 0 },
-        ],
-        fftPoints: [
-          { frequency: 0, magnitude: 0 },
-          { frequency: nyquist, magnitude: 0 },
-        ],
-        maxAmplitude: maxAmp,
-        maxMagnitude: 1.0,
-        threshold: 0.35,
-        ghostPeaks: [],
-      };
-    }
-
-    const halfN = Math.floor(N / 2);
-    const numBins = Math.max(1, halfN);
-    const spectrumPoints = [];
-    const fftPoints = [];
-
-    let maxSpecAmp = 0;
-    let maxZeroMeanMag = 0;
-    let sumZeroMeanMag = 0;
-
-    for (let k = 0; k <= numBins; k++) {
-      const freq = (k * fs) / N;
-      // Hann window + zero-mean DFT
-      let reCentered = 0;
-      let imCentered = 0;
-      let reRaw = 0;
-      let imRaw = 0;
-
-      const angleFactor = (-2 * Math.PI * k) / N;
-      for (let n = 0; n < N; n++) {
-        const angle = angleFactor * n;
-        const cosA = Math.cos(angle);
-        const sinA = Math.sin(angle);
-        const hann = N > 2 ? 0.5 * (1 - Math.cos((2 * Math.PI * n) / (N - 1))) : 1.0;
-
-        reCentered += centered[n] * hann * cosA;
-        imCentered += centered[n] * hann * sinA;
-
-        // Broadband spectrum uses lightly-attenuated DC or zero-mean broadband amplitude
-        const valBroadband = k === 0 ? centered[n] : centered[n];
-        reRaw += valBroadband * cosA;
-        imRaw += valBroadband * sinA;
-      }
-
-      const scale = k === 0 || k === halfN ? 1 / N : 2 / N;
-      // Correct for Hann window coherent gain (0.5)
-      const hannGain = N > 2 ? 2.0 : 1.0;
-      const ampBroadband = Math.sqrt(reRaw * reRaw + imRaw * imRaw) * scale;
-      const magGhost = k === 0 ? 0 : Math.sqrt(reCentered * reCentered + imCentered * imCentered) * scale * hannGain;
-
-      if (ampBroadband > maxSpecAmp) maxSpecAmp = ampBroadband;
-      if (magGhost > maxZeroMeanMag) maxZeroMeanMag = magGhost;
-      if (k > 0) sumZeroMeanMag += magGhost;
-
-      spectrumPoints.push({
-        frequency: Number(freq.toFixed(2)),
-        amplitude: Number(ampBroadband.toFixed(5)),
-      });
-      fftPoints.push({
-        frequency: Number(freq.toFixed(2)),
-        magnitude: Number(magGhost.toFixed(5)),
-      });
-    }
-
-    const cleanMaxAmp = maxSpecAmp > 0 ? Number((maxSpecAmp * 1.15).toFixed(4)) : 1.0;
-    const cleanMaxMag = maxZeroMeanMag > 0 ? Number((maxZeroMeanMag * 1.15).toFixed(4)) : 1.0;
-    const avgMag = numBins > 0 ? sumZeroMeanMag / numBins : 0;
-    const threshold =
-      maxZeroMeanMag > 0
-        ? Number(Math.max(avgMag * 1.6, maxZeroMeanMag * 0.45).toFixed(4))
-        : 0.35;
-
-    // Detect local maxima above threshold (exclude DC bin k=0)
-    const candidatePeaks = [];
-    for (let k = 1; k < fftPoints.length; k++) {
-      const curr = fftPoints[k].magnitude;
-      const prev = k > 1 ? fftPoints[k - 1].magnitude : -1;
-      const next = k < fftPoints.length - 1 ? fftPoints[k + 1].magnitude : -1;
-      if (curr >= threshold && curr >= prev && curr >= next && curr > 0) {
-        candidatePeaks.push({
-          frequency: fftPoints[k].frequency,
-          magnitude: curr,
-          label: Math.round(fftPoints[k].frequency) + " Hz",
-        });
-      }
-    }
-
-    candidatePeaks.sort((a, b) => b.magnitude - a.magnitude);
-    const ghostPeaks = candidatePeaks.slice(0, 3);
-
-    return {
-      empty: false,
-      maxFrequency: nyquist,
-      spectrumPoints,
-      fftPoints,
-      maxAmplitude: cleanMaxAmp,
-      maxMagnitude: cleanMaxMag,
-      threshold,
-      ghostPeaks,
-    };
-  }
-
-  /**
-   * Compute and store per-axis spectral & FFT analysis data from CSV records
-   */
-  function computeAndStoreAxisAnalysis(records, filename) {
-    if (!Array.isArray(records) || records.length === 0) {
-      ["x", "y", "z"].forEach((axis) => {
+  function applyBackendFftAnalysis(axesPayload, filename) {
+    ["x", "y", "z"].forEach((axis) => {
+      const axisResult = axesPayload && axesPayload[axis];
+      if (!axisResult || axisResult.empty) {
         state.axisAnalysisData[axis] = {
           empty: true,
           filename: filename || "selected file",
-          maxFrequency: 200,
+          maxFrequency: (axisResult && axisResult.maxFrequency) || 500,
           spectrumPoints: [],
           fftPoints: [],
           maxAmplitude: 1.0,
@@ -700,27 +556,19 @@
           threshold: 0.35,
           ghostPeaks: [],
         };
-      });
-      return;
-    }
-
-    // Determine effective sampling rate (median or last valid samplingRate)
-    let samplingRate = 200;
-    for (let i = 0; i < records.length; i++) {
-      const sr = Number(records[i].samplingRate);
-      if (Number.isFinite(sr) && sr > 0) {
-        samplingRate = sr;
-        break;
+      } else {
+        state.axisAnalysisData[axis] = {
+          empty: false,
+          filename: axisResult.filename || filename,
+          maxFrequency: axisResult.maxFrequency || 500,
+          spectrumPoints: Array.isArray(axisResult.spectrumPoints) ? axisResult.spectrumPoints : [],
+          fftPoints: Array.isArray(axisResult.fftPoints) ? axisResult.fftPoints : [],
+          maxAmplitude: axisResult.maxAmplitude || 1.0,
+          maxMagnitude: axisResult.maxMagnitude || 1.0,
+          threshold: typeof axisResult.threshold === "number" ? axisResult.threshold : 0.35,
+          ghostPeaks: Array.isArray(axisResult.ghostPeaks) ? axisResult.ghostPeaks : [],
+        };
       }
-    }
-
-    ["x", "y", "z"].forEach((axis) => {
-      const samples = records
-        .map((r) => Number(r[axis]))
-        .filter((v) => Number.isFinite(v));
-      const dft = computeAxisDft(samples, samplingRate);
-      dft.filename = filename;
-      state.axisAnalysisData[axis] = dft;
     });
   }
 
@@ -1155,7 +1003,6 @@
     renderSpectrum,
     renderGhostFFT,
     renderAllAxisGraphs,
-    computeAxisDft,
     getState: function () {
       return {
         activeTab: state.activeTab,

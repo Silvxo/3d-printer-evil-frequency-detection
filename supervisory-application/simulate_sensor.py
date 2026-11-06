@@ -2,7 +2,7 @@
 """Simulate an ESP32 + ADXL345 sensor publishing 3D printer vibration data over MQTT.
 
 Publishes semicolon-delimited payloads in the format:
-    x;y;z;samplingRate
+    x;y;z
 to the configured MQTT broker and topic.
 """
 
@@ -20,7 +20,7 @@ BROKER_HOST = "broker.hivemq.com"
 BROKER_PORT = 1883
 MQTT_TOPIC = "3d/printer/49801a48-1dd7-4301-901b-e0f87f44521a"
 
-DEFAULT_SAMPLING_RATE = 200
+DEFAULT_SAMPLING_RATE = 1000
 DEFAULT_PUBLISH_INTERVAL = 0.05  # 20 msg/s over network by default
 DEFAULT_BATCH_SIZE = 10  # 10 lines per MQTT message by default
 DEFAULT_NOISE_STD = 0.025
@@ -69,14 +69,9 @@ def generate_sample(
     return round(x, 4), round(y, 4), round(z, 4)
 
 
-def format_payload(x: float, y: float, z: float, sampling_rate: int | float) -> str:
-    """Format sensor reading into 'x;y;z;samplingRate' string."""
-    sr_str = (
-        str(int(sampling_rate))
-        if float(sampling_rate).is_integer()
-        else f"{sampling_rate:g}"
-    )
-    return f"{x:.4f};{y:.4f};{z:.4f};{sr_str}"
+def format_payload(x: float, y: float, z: float, sampling_rate: int | float | None = None) -> str:
+    """Format sensor reading into 'x;y;z' string."""
+    return f"{x:.4f};{y:.4f};{z:.4f}"
 
 
 def generate_batch_payload(
@@ -89,7 +84,7 @@ def generate_batch_payload(
     noise_std: float = DEFAULT_NOISE_STD,
     rng: random.Random | None = None,
 ) -> str:
-    """Generate a newline-separated batch of 'x;y;z;samplingRate' lines for a single MQTT message."""
+    """Generate a newline-separated batch of 'x;y;z' lines for a single MQTT message."""
     count = max(1, int(batch_size))
     lines: list[str] = []
     for offset in range(count):
@@ -102,7 +97,7 @@ def generate_batch_payload(
             noise_std=noise_std,
             rng=rng,
         )
-        lines.append(format_payload(x, y, z, sampling_rate))
+        lines.append(format_payload(x, y, z))
     return "\n".join(lines)
 
 

@@ -28,27 +28,28 @@ class DummyMQTTMessage:
 
 class SupervisoryAppTests(unittest.TestCase):
     def test_parse_payload_valid(self) -> None:
-        parsed_int_rate = parse_payload("0.016;-0.008;1.000;100")
+        parsed_1 = parse_payload("0.016;-0.008;1.000")
         self.assertEqual(
-            parsed_int_rate,
-            {"x": 0.016, "y": -0.008, "z": 1.0, "samplingRate": 100},
+            parsed_1,
+            {"x": 0.016, "y": -0.008, "z": 1.0, "samplingRate": 1000},
         )
-        self.assertIsInstance(parsed_int_rate["samplingRate"], int)
+        self.assertIsInstance(parsed_1["samplingRate"], int)
 
-        parsed_float_rate = parse_payload("-1.25;0.5;9.81;100.5")
+        parsed_2 = parse_payload("-1.25;0.5;9.81")
         self.assertEqual(
-            parsed_float_rate,
-            {"x": -1.25, "y": 0.5, "z": 9.81, "samplingRate": 100.5},
+            parsed_2,
+            {"x": -1.25, "y": 0.5, "z": 9.81, "samplingRate": 1000},
         )
-        self.assertIsInstance(parsed_float_rate["samplingRate"], float)
+        self.assertIsInstance(parsed_2["samplingRate"], int)
 
     def test_parse_payload_invalid(self) -> None:
         for bad_payload in (
-            "1.0;2.0;3.0",
+            "1.0;2.0",
+            "1.0;2.0;3.0;100",
             "1.0;2.0;3.0;100;5",
-            "abc;2.0;3.0;100",
-            "1.0;nan;3.0;100",
-            "1.0;2.0;inf;100",
+            "abc;2.0;3.0",
+            "1.0;nan;3.0",
+            "1.0;2.0;inf",
             "",
         ):
             with self.subTest(payload=bad_payload):
@@ -65,29 +66,29 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(lines, ["timestamp,topic,x,y,z,samplingRate,payload"])
             self.assertEqual(store.read_records(), [])
 
-            first = store.append_message(MQTT_TOPIC, "0.016;-0.008;1.000;100")
-            second = store.append_message(MQTT_TOPIC, "0.032;0.004;0.996;200.5")
+            first = store.append_message(MQTT_TOPIC, "0.016;-0.008;1.000")
+            second = store.append_message(MQTT_TOPIC, "0.032;0.004;0.996")
 
             saved = store.read_records()
             self.assertEqual(len(saved), 2)
             self.assertEqual(saved[0]["topic"], MQTT_TOPIC)
-            self.assertEqual(saved[0]["payload"], "0.016;-0.008;1.000;100")
+            self.assertEqual(saved[0]["payload"], "0.016;-0.008;1.000")
             self.assertEqual(saved[0]["x"], 0.016)
             self.assertEqual(saved[0]["y"], -0.008)
             self.assertEqual(saved[0]["z"], 1.0)
-            self.assertEqual(saved[0]["samplingRate"], 100)
+            self.assertEqual(saved[0]["samplingRate"], 1000)
             self.assertIsInstance(saved[0]["x"], float)
             self.assertIsInstance(saved[0]["y"], float)
             self.assertIsInstance(saved[0]["z"], float)
             self.assertIsInstance(saved[0]["samplingRate"], int)
             self.assertEqual(saved[0]["timestamp"], first["timestamp"])
 
-            self.assertEqual(saved[1]["payload"], "0.032;0.004;0.996;200.5")
+            self.assertEqual(saved[1]["payload"], "0.032;0.004;0.996")
             self.assertEqual(saved[1]["x"], 0.032)
             self.assertEqual(saved[1]["y"], 0.004)
             self.assertEqual(saved[1]["z"], 0.996)
-            self.assertEqual(saved[1]["samplingRate"], 200.5)
-            self.assertIsInstance(saved[1]["samplingRate"], float)
+            self.assertEqual(saved[1]["samplingRate"], 1000)
+            self.assertIsInstance(saved[1]["samplingRate"], int)
             self.assertEqual(saved[1]["timestamp"], second["timestamp"])
 
     def test_on_message_callback_stores_valid_and_skips_invalid(self) -> None:
@@ -98,7 +99,7 @@ class SupervisoryAppTests(unittest.TestCase):
 
             valid_msg = DummyMQTTMessage(
                 topic=MQTT_TOPIC,
-                payload=b"0.055;-0.008;0.992;100\n",
+                payload=b"0.055;-0.008;0.992\n",
             )
             invalid_msg = DummyMQTTMessage(
                 topic=MQTT_TOPIC,
@@ -111,17 +112,17 @@ class SupervisoryAppTests(unittest.TestCase):
                 client.on_message(client, None, invalid_msg)
 
             output = stdout_buf.getvalue()
-            self.assertIn("x=0.055, y=-0.008, z=0.992, samplingRate=100", output)
+            self.assertIn("x=0.055, y=-0.008, z=0.992, samplingRate=1000", output)
             self.assertIn("Warning: ignoring malformed payload", output)
 
             saved = store.read_records()
             self.assertEqual(len(saved), 1)
             self.assertEqual(saved[0]["topic"], MQTT_TOPIC)
-            self.assertEqual(saved[0]["payload"], "0.055;-0.008;0.992;100")
+            self.assertEqual(saved[0]["payload"], "0.055;-0.008;0.992")
             self.assertEqual(saved[0]["x"], 0.055)
             self.assertEqual(saved[0]["y"], -0.008)
             self.assertEqual(saved[0]["z"], 0.992)
-            self.assertEqual(saved[0]["samplingRate"], 100)
+            self.assertEqual(saved[0]["samplingRate"], 1000)
 
     def test_section_manager_sequential_numbering(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -181,7 +182,7 @@ class SupervisoryAppTests(unittest.TestCase):
 
             # 1. Idle state ignores messages
             self.assertEqual(controller.state, "Idle")
-            self.assertIsNone(controller.handle_message(MQTT_TOPIC, "0.1;0.2;0.9;100"))
+            self.assertIsNone(controller.handle_message(MQTT_TOPIC, "0.1;0.2;0.9"))
             self.assertEqual(controller.list_sections(), [])
 
             # 2. Start recording "run" -> creates run.csv and records messages
@@ -190,7 +191,7 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(status["activeSection"], "run.csv")
             self.assertEqual(status["sections"], ["run.csv"])
 
-            msg1 = DummyMQTTMessage(MQTT_TOPIC, b"0.10;0.20;0.95;100\n")
+            msg1 = DummyMQTTMessage(MQTT_TOPIC, b"0.10;0.20;0.95\n")
             stdout_buf = io.StringIO()
             with redirect_stdout(stdout_buf):
                 client.on_message(client, None, msg1)
@@ -201,7 +202,7 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(status["state"], "Paused")
             self.assertEqual(status["activeSection"], "run.csv")
 
-            msg2 = DummyMQTTMessage(MQTT_TOPIC, b"0.50;0.60;0.99;100\n")
+            msg2 = DummyMQTTMessage(MQTT_TOPIC, b"0.50;0.60;0.99\n")
             with redirect_stdout(stdout_buf):
                 client.on_message(client, None, msg2)
             self.assertEqual(len(controller.get_section_records("run.csv")), 1)
@@ -212,7 +213,7 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(status["activeSection"], "run.csv")
             self.assertEqual(status["sections"], ["run.csv"])
 
-            msg3 = DummyMQTTMessage(MQTT_TOPIC, b"0.30;0.40;0.97;100\n")
+            msg3 = DummyMQTTMessage(MQTT_TOPIC, b"0.30;0.40;0.97\n")
             with redirect_stdout(stdout_buf):
                 client.on_message(client, None, msg3)
             records = controller.get_section_records("run.csv")
@@ -224,7 +225,7 @@ class SupervisoryAppTests(unittest.TestCase):
             status = controller.stop()
             self.assertEqual(status["state"], "Stopped")
             self.assertEqual(status["completedSessions"], 1)
-            self.assertIsNone(controller.handle_message(MQTT_TOPIC, "0.9;0.9;0.9;100"))
+            self.assertIsNone(controller.handle_message(MQTT_TOPIC, "0.9;0.9;0.9"))
             self.assertEqual(len(controller.get_section_records("run.csv")), 2)
 
             # 6. Start again with same name "run" -> creates run_1.csv
@@ -232,7 +233,7 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(status["state"], "Recording")
             self.assertEqual(status["activeSection"], "run_1.csv")
             self.assertEqual(status["sections"], ["run.csv", "run_1.csv"])
-            controller.handle_message(MQTT_TOPIC, "0.77;0.88;1.01;200")
+            controller.handle_message(MQTT_TOPIC, "0.77;0.88;1.01")
             self.assertEqual(len(controller.get_section_records("run.csv")), 2)
             self.assertEqual(len(controller.get_section_records("run_1.csv")), 1)
 
@@ -281,7 +282,7 @@ class SupervisoryAppTests(unittest.TestCase):
                 self.assertEqual(status["state"], "Recording")
                 self.assertEqual(status["activeSection"], "benchy.csv")
 
-                controller.handle_message(MQTT_TOPIC, "0.01;-0.02;0.98;100")
+                controller.handle_message(MQTT_TOPIC, "0.01;-0.02;0.98")
 
                 # POST /api/pause
                 code, status = request_json("POST", "/api/pause")
@@ -311,23 +312,38 @@ class SupervisoryAppTests(unittest.TestCase):
                 self.assertEqual(len(sec_data["records"]), 1)
                 self.assertEqual(sec_data["records"][0]["x"], 0.01)
 
+                # GET /api/fft/benchy.csv
+                code, fft_data = request_json("GET", "/api/fft/benchy.csv")
+                self.assertEqual(code, 200)
+                self.assertEqual(fft_data["section"], "benchy.csv")
+                self.assertEqual(fft_data["sampleCount"], 1)
+                self.assertIn("axes", fft_data)
+                for axis_key in ("x", "y", "z"):
+                    self.assertIn(axis_key, fft_data["axes"])
+                    self.assertFalse(fft_data["axes"][axis_key]["empty"])
+
                 # GET /api/sections/nonexistent.csv -> 404
                 code, err_data = request_json("GET", "/api/sections/nonexistent.csv")
                 self.assertEqual(code, 404)
                 self.assertIn("error", err_data)
+
+                # GET /api/fft/nonexistent.csv -> 404
+                code, err_fft = request_json("GET", "/api/fft/nonexistent.csv")
+                self.assertEqual(code, 404)
+                self.assertIn("error", err_fft)
             finally:
                 server.shutdown()
                 server.server_close()
 
     def test_simulate_sensor_payload_generation(self) -> None:
         for idx in range(10):
-            x, y, z = generate_sample(sample_index=idx, sampling_rate=200)
-            payload = format_payload(x, y, z, 200)
+            x, y, z = generate_sample(sample_index=idx, sampling_rate=1000)
+            payload = format_payload(x, y, z)
             parsed = parse_payload(payload)
             self.assertAlmostEqual(parsed["x"], x, places=4)
             self.assertAlmostEqual(parsed["y"], y, places=4)
             self.assertAlmostEqual(parsed["z"], z, places=4)
-            self.assertEqual(parsed["samplingRate"], 200)
+            self.assertEqual(parsed["samplingRate"], 1000)
 
     def test_multiline_batch_mqtt_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -339,7 +355,7 @@ class SupervisoryAppTests(unittest.TestCase):
             batch_payload = generate_batch_payload(
                 start_index=0,
                 batch_size=25,
-                sampling_rate=200,
+                sampling_rate=1000,
             )
             self.assertEqual(len(batch_payload.splitlines()), 25)
 
@@ -355,7 +371,7 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(len(records), 25)
 
             # Also verify a multi-line message containing one malformed line saves valid lines
-            mixed_payload = b"0.11;0.22;1.01;200\ncorrupted_line\n0.33;0.44;0.99;200\n"
+            mixed_payload = b"0.11;0.22;1.01\ncorrupted_line\n0.33;0.44;0.99\n"
             with redirect_stdout(stdout_buf):
                 client.on_message(
                     client,
@@ -368,6 +384,47 @@ class SupervisoryAppTests(unittest.TestCase):
             self.assertEqual(records_after[-2]["x"], 0.11)
             self.assertEqual(records_after[-1]["x"], 0.33)
             self.assertIn("Warning: ignoring malformed payload line", stdout_buf.getvalue())
+
+    def test_fft_script_computes_resonance_peaks(self) -> None:
+        from fft import analyze_csv_section, compute_axis_fft, load_csv_axes
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = Path(tmpdir) / "synth.csv"
+            store = CsvMessageStore(csv_path)
+            batch_payload = generate_batch_payload(
+                start_index=0,
+                batch_size=1000,
+                sampling_rate=1000,
+                freq_x=42.0,
+                freq_y=36.0,
+                freq_z=58.0,
+                noise_std=0.0,
+            )
+            store.append_messages(MQTT_TOPIC, batch_payload)
+
+            x, y, z, fs = load_csv_axes(csv_path)
+            self.assertEqual(len(x), 1000)
+            self.assertEqual(fs, 1000.0)
+
+            _, _, peaks_x = compute_axis_fft(x, fs=fs)
+            _, _, peaks_y = compute_axis_fft(y, fs=fs)
+            _, _, peaks_z = compute_axis_fft(z, fs=fs)
+
+            self.assertAlmostEqual(peaks_x[0][0], 42.0, delta=1.0)
+            self.assertAlmostEqual(peaks_y[0][0], 36.0, delta=1.0)
+            self.assertAlmostEqual(peaks_z[0][0], 58.0, delta=1.0)
+
+            section_analysis = analyze_csv_section(csv_path)
+            self.assertEqual(section_analysis["sampleCount"], 1000)
+            self.assertAlmostEqual(
+                section_analysis["axes"]["x"]["ghostPeaks"][0]["frequency"], 42.0, delta=1.0
+            )
+            self.assertAlmostEqual(
+                section_analysis["axes"]["y"]["ghostPeaks"][0]["frequency"], 36.0, delta=1.0
+            )
+            self.assertAlmostEqual(
+                section_analysis["axes"]["z"]["ghostPeaks"][0]["frequency"], 58.0, delta=1.0
+            )
 
 
 if __name__ == "__main__":

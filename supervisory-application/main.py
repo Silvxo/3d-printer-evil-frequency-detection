@@ -12,6 +12,7 @@ from urllib.parse import unquote, urlparse
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
+from fft import analyze_csv_section
 from section_manager import SectionManager
 from storage import CsvMessageStore, parse_payload
 
@@ -103,7 +104,7 @@ class RecordingSessionController:
         with self._lock:
             return self._list_sections_unlocked()
 
-    def get_section_records(self, filename: str) -> list[dict[str, Any]]:
+    def _resolve_section_file(self, filename: str) -> Path:
         safe_name = Path(filename).name
         if not safe_name:
             raise FileNotFoundError(f"Section {filename!r} not found")
@@ -112,7 +113,15 @@ class RecordingSessionController:
         target = self.data_dir / safe_name
         if not target.is_file():
             raise FileNotFoundError(f"Section {safe_name!r} not found")
+        return target
+
+    def get_section_records(self, filename: str) -> list[dict[str, Any]]:
+        target = self._resolve_section_file(filename)
         return CsvMessageStore(target).read_records()
+
+    def get_section_fft(self, filename: str) -> dict[str, Any]:
+        target = self._resolve_section_file(filename)
+        return analyze_csv_section(target)
 
     def get_status(self) -> dict[str, Any]:
         with self._lock:
@@ -253,8 +262,29 @@ def create_http_server(
                 self._send_json(200, {"sections": controller.list_sections()})
                 return
 
+            if path.startswith("/api/fft/"):
+                raw_name = path[len("/api/fft/") :]
+                filename = unquote(raw_name)
+                try:
+                    fft_data = controller.get_section_fft(filename)
+                except FileNotFoundError:
+                    self._send_json(404, {"error": "Section not found"})
+                    return
+                self._send_json(200, fft_data)
+                return
+
             if path.startswith("/api/sections/"):
                 raw_name = path[len("/api/sections/") :]
+                if raw_name.endswith("/fft"):
+                    filename = unquote(raw_name[: -len("/fft")])
+                    try:
+                        fft_data = controller.get_section_fft(filename)
+                    except FileNotFoundError:
+                        self._send_json(404, {"error": "Section not found"})
+                        return
+                    self._send_json(200, fft_data)
+                    return
+
                 filename = unquote(raw_name)
                 try:
                     records = controller.get_section_records(filename)

@@ -24,8 +24,8 @@ if [ ! -x "${APP_DIR}/.venv/bin/python" ]; then
     python3 -m venv "${APP_DIR}/.venv"
 fi
 
-# Install requirements if paho-mqtt is not yet installed
-if ! "${APP_DIR}/.venv/bin/python" -c "import paho.mqtt" >/dev/null 2>&1; then
+# Install requirements if dependencies are not yet installed
+if ! "${APP_DIR}/.venv/bin/python" -c "import paho.mqtt, numpy, matplotlib" >/dev/null 2>&1; then
     echo "[SETUP] Installing dependencies from requirements.txt..."
     "${APP_DIR}/.venv/bin/pip" install -r "${APP_DIR}/requirements.txt"
 fi
