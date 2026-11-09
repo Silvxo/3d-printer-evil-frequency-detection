@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Printer Evil Frequency Detection — Supervisory UI</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-brand">
+      <h1>3D Printer Evil Frequency Detection</h1>
+    </div>
+    <nav class="tab-bar" role="tablist" aria-label="Supervisory Console Tabs">
+      <button
+        type="button"
+        class="tab-btn active"
+        id="tab-btn-capture"
+        role="tab"
+        aria-selected="true"
+        aria-controls="tab-capture"
+        data-target="tab-capture"
+      >
+        Data Capture
+      </button>
+      <button
+        type="button"
+        class="tab-btn"
+        id="tab-btn-analysis"
+        role="tab"
+        aria-selected="false"
+        aria-controls="tab-analysis"
+        data-target="tab-analysis"
+      >
+        Data Analysis
+      </button>
+    </nav>
+  </header>
+
+  <main class="app-main">
+    <!-- TAB 1: DATA CAPTURE -->
+    <section
+      id="tab-capture"
+      class="tab-panel active"
+      role="tabpanel"
+      aria-labelledby="tab-btn-capture"
+    >
+      <div class="card capture-card">
+        <div class="card-header">
+          <h2>Recording Session Control</h2>
+        </div>
+
+        <div class="form-group">
+          <label for="recording-name-input">Data Recording Name</label>
+          <input
+            type="text"
+            id="recording-name-input"
+            name="recordingName"
+            placeholder="Leave empty for automatic sequential number (e.g., 1, 2, 3...)"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="button-group" role="group" aria-label="Recording Controls">
+          <button type="button" id="btn-start" class="control-btn btn-start">
+            <span class="btn-icon">&#9654;</span>
+            Start
+          </button>
+          <button type="button" id="btn-pause" class="control-btn btn-pause" disabled>
+            <span class="btn-icon">&#10074;&#10074;</span>
+            Pause
+          </button>
+          <button type="button" id="btn-stop" class="control-btn btn-stop" disabled>
+            <span class="btn-icon">&#9632;</span>
+            Stop
+          </button>
+        </div>
+
+        <div class="status-panel" aria-live="polite">
+          <div class="status-item">
+            <span class="status-label">Current State</span>
+            <span id="capture-state-badge" class="state-badge state-idle">Idle</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Active Section Name</span>
+            <span id="active-section-name" class="status-value">None (Next auto-ID: #1)</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Session Counter</span>
+            <span id="session-counter" class="status-value">0 completed</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: DATA ANALYSIS -->
+    <section
+      id="tab-analysis"
+      class="tab-panel"
+      role="tabpanel"
+      aria-labelledby="tab-btn-analysis"
+      hidden
+    >
+      <div class="analysis-toolbar">
+        <h2>Data Analysis</h2>
+        <div class="analysis-controls">
+          <label for="analysis-file-select">Select Recording File:</label>
+          <select id="analysis-file-select" class="file-select">
+            <option value="">-- Select a CSV file --</option>
+          </select>
+          <button type="button" id="btn-refresh-files" class="btn-secondary">Refresh</button>
+          <span class="meta-pill" id="analysis-section-pill">No file selected</span>
+        </div>
+      </div>
+
+      <div class="graphs-grid">
+        <!-- Group 1: Full Frequency Spectrum -->
+        <article class="card graph-card">
+          <div class="graph-card-header">
+            <h3>Full Frequency Spectrum</h3>
+          </div>
+          <div class="axis-graphs-grid">
+            <div class="axis-graph-box">
+              <h4 class="axis-title">X Axis</h4>
+              <div class="canvas-container">
+                <canvas
+                  id="graph-spectrum-x"
+                  width="500"
+                  height="220"
+                  aria-label="Full Frequency Spectrum X Axis"
+                ></canvas>
+              </div>
+            </div>
+            <div class="axis-graph-box">
+              <h4 class="axis-title">Y Axis</h4>
+              <div class="canvas-container">
+                <canvas
+                  id="graph-spectrum-y"
+                  width="500"
+                  height="220"
+                  aria-label="Full Frequency Spectrum Y Axis"
+                ></canvas>
+              </div>
+            </div>
+            <div class="axis-graph-box">
+              <h4 class="axis-title">Z Axis</h4>
+              <div class="canvas-container">
+                <canvas
+                  id="graph-spectrum-z"
+                  width="500"
+                  height="220"
+                  aria-label="Full Frequency Spectrum Z Axis"
+                ></canvas>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Group 2: Ghost Frequencies (FFT) -->
+        <article class="card graph-card">
+          <div class="graph-card-header">
+            <h3>Ghost Frequencies (FFT)</h3>
+          </div>
+          <div class="axis-graphs-grid">
+            <div class="axis-graph-box">
+              <h4 class="axis-title">X Axis</h4>
+              <div class="canvas-container">
+                <canvas
+                  id="graph-fft-x"
+                  width="500"
+                  height="220"
+                  aria-label="FFT Ghost Frequencies X Axis"
+                ></canvas>
+              </div>
+            </div>
+            <div class="axis-graph-box">
+              <h4 class="axis-title">Y Axis</h4>
+              <div class="canvas-container">
+                <canvas
+                  id="graph-fft-y"
+                  width="500"
+                  height="220"
+                  aria-label="FFT Ghost Frequencies Y Axis"
+                ></canvas>
+              </div>
+            </div>
+            <div class="axis-graph-box">
+              <h4 class="axis-title">Z Axis</h4>
+              <div class="canvas-container">
+                <canvas
+                  id="graph-fft-z"
+                  width="500"
+                  height="220"
+                  aria-label="FFT Ghost Frequencies Z Axis"
+                ></canvas>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
